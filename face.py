@@ -147,11 +147,13 @@ def triangle(p, q, m):
 # 되는지 보려고 임의로 그냥 옮긴점
 def movetriangle(tri1):
     newt = []
-    for i in range(3):
+    for i in range(2):
         newt.append([tri1[i][0], tri1[i][1]-10])
+    newt.append([tri1[2][0], tri1[2][1]])
+    print(' ',newt)
 
     color = (0, 150, 0)
-    #cv2.polylines(output, np.float32([newt]).astype(int), True, color, 2, 16)
+    cv2.polylines(eye_output, np.float32([newt]).astype(int), True, color, 2, 16)
 
     return newt
 
@@ -172,6 +174,7 @@ def warping(img1, result, t1, t2):
     # Find bounding rectangle for each triangle
     r1 = cv2.boundingRect(np.float32([t1]))
     r = cv2.boundingRect(np.float32([t2]))
+    print(r1, r)
 
     # Offset points by left top corner of the respective rectangles
     t1Rect = []
@@ -180,9 +183,9 @@ def warping(img1, result, t1, t2):
     for i in range(0, 3):
         t1Rect.append(((t1[i][0] - r1[0]), (t1[i][1] - r1[1])))
         t2Rect.append(((t2[i][0] - r[0]), (t2[i][1] - r[1])))
-
+    print(t1Rect, t2Rect)
     mask = np.zeros((r[3], r[2], 3), dtype=np.float32)
-    cv2.fillConvexPoly(mask, np.int32(t1Rect), (1.0, 1.0, 1.0), 16, 0);
+    cv2.fillConvexPoly(mask, np.int32(t2Rect), (1.0, 1.0, 1.0), 16, 0);
 
     # Apply warpImage to small rectangular patches
     img1Rect = img1[r1[1]:r1[1] + r1[3], r1[0]:r1[0] + r1[2]]
@@ -207,7 +210,7 @@ for i in range(1,len(jaw[0])):
     warping(output, imgwarp, t1, t2)
 
 
-#cv2.imshow("draw", output)
+cv2.imshow("draw", eye_output)
 cv2.imshow("imgwarp", imgwarp)
 # 점 줄어드는거 어떻게구하지.. 밑에꺼 참고해서?
 '''
