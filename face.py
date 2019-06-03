@@ -52,7 +52,7 @@ for k, d in enumerate(dets):
 
     left_eye = [shape[lStart:lEnd]]
     right_eye = [shape[rStart:rEnd]]
-    jaw = [shape[jStart:jEnd]]
+    jaw = [shape[jStart+1:jEnd-1]]
 
 #win.add_overlay(dets)
 
@@ -77,7 +77,7 @@ for i in range(len(eye)):
 
     channel_count = bImg.shape[2] # i.e. 3 or 4 depending on your image
     ignore_mask_color = (255,)*channel_count
-    cv2.fillPoly(mask, roi_corners, ignore_mask_color)
+    cv2.fillConvexPoly(mask, roi_corners, ignore_mask_color)
     #rEye_mask = cv2.bitwise_and(bImg, mask)
     #cv2.imshow("masked", masked_image0)
 
@@ -86,7 +86,7 @@ for i in range(len(eye)):
     center.append(list(map(int, tmp_center)))
     r, c = bImg.shape[:2]
     M1 = cv2.getRotationMatrix2D(tuple(center[i]), 0, 1.3)
-    dst1 = cv2.warpAffine(mask, M1, (c, r))
+    dst1 = cv2.warpAffine(mask, M1, (c, r), borderMode=cv2.BORDER_REFLECT_101)
     #cv2.imshow("mask", dst1)
     eye_mask = cv2.bitwise_and(bImg, dst1)
     #cv2.imshow("masked_scale", rEye_mask)
@@ -94,27 +94,151 @@ for i in range(len(eye)):
     # masked 눈 확대
     r, c = eye_mask.shape[:2]
     M2 = cv2.getRotationMatrix2D(tuple(center[i]), 0, 1.3)
-    eyemask.append(cv2.warpAffine(eye_mask, M2, (c, r)))
+    eyemask.append(cv2.warpAffine(eye_mask, M2, (c, r),borderMode=cv2.BORDER_REFLECT_101))
     #cv2.imshow("scale"+str(i), eyemask[i])
 
-    # ROI 확대
+    # ROI 확대 (눈 확대한것과 같은 크기로)
     M3 = cv2.getRotationMatrix2D(tuple(center[i]), 0, 1.3)
-    mask_scaled.append(cv2.warpAffine(dst1, M3, (c, r)))
+    mask_scaled.append(cv2.warpAffine(dst1, M3, (c, r),borderMode=cv2.BORDER_REFLECT_101))
 
 eyemask_all = cv2.add(eyemask[0], eyemask[1])
-cv2.imshow("eyemask_all", eyemask_all)
+#cv2.imshow("eyemask_all", eyemask_all)
 mask_all = cv2.add(mask_scaled[0], mask_scaled[1])
-cv2.imshow("mask_all", mask_all)
+#cv2.imshow("mask_all", mask_all)
 
 print(center[0], center[1])
-center_All = list(map(np.mean,zip(*center)))
-center_All = list(map(int,center_All))
-print (center_All)
+center_eye = list(map(np.mean,zip(*center)))
+center_eye = list(map(int,center_eye))
+#print ('center_eye', center_eye)
 
 # Clone seamlessly.
-output = cv2.seamlessClone(eyemask_all, bImg, mask_all, tuple(center_All), cv2.NORMAL_CLONE)
+eye_output = cv2.seamlessClone(eyemask_all, bImg, mask_all, tuple(center_eye), cv2.NORMAL_CLONE)
 
-cv2.imshow("clone", output)
+cv2.imshow("clone", eye_output)
+
+
+
+# ---------------------------------------------------------------------------------
+
+jmask = np.zeros(bImg.shape, dtype=np.uint8)
+j_roi_corners = np.array(jaw, dtype=np.int32)
+
+channel_count = bImg.shape[2] # i.e. 3 or 4 depending on your image
+ignore_mask_color = (255,)*channel_count
+cv2.fillPoly(jmask, j_roi_corners, ignore_mask_color)
+jaw_mask = cv2.bitwise_and(bImg, jmask)
+cv2.imshow("masked", jaw_mask)
+
+mid = list(map(np.mean, zip(*[jaw[0][0], jaw[0][14]])))
+mid = list(map(int, mid))
+#print('mid', mid)
+
+output = eye_output.copy()
+
+# Delaunay Triangulation - 턱, 턱 관련 외부 점
+def triangle(p, q, m):
+    tri = [list(p), list(q), m]
+    color = (255, 150, 0)
+    #cv2.polylines(output, np.float32([tri]).astype(int), True, color, 2, 16)
+    print(tri)
+
+    return tri
+
+# 되는지 보려고 임의로 그냥 옮긴점
+def movetriangle(tri1):
+    newt = []
+    for i in range(3):
+        newt.append([tri1[i][0], tri1[i][1]-10])
+
+    color = (0, 150, 0)
+    #cv2.polylines(output, np.float32([newt]).astype(int), True, color, 2, 16)
+
+    return newt
+
+
+def applyAffineTransform(src, srcTri, dstTri, size):
+    # Given a pair of triangles, find the affine transform.
+    warpMat = cv2.getAffineTransform(np.float32(srcTri), np.float32(dstTri))
+
+    # Apply the Affine Transform just found to the src image
+    dst = cv2.warpAffine(src, warpMat, (size[0], size[1]), None, flags=cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_REFLECT_101)
+
+    return dst
+
+
+def warping(img1, result, t1, t2):
+
+    # Find bounding rectangle for each triangle
+    r1 = cv2.boundingRect(np.float32([t1]))
+    r = cv2.boundingRect(np.float32([t2]))
+
+    # Offset points by left top corner of the respective rectangles
+    t1Rect = []
+    t2Rect = []
+
+    for i in range(0, 3):
+        t1Rect.append(((t1[i][0] - r1[0]), (t1[i][1] - r1[1])))
+        t2Rect.append(((t2[i][0] - r[0]), (t2[i][1] - r[1])))
+
+    mask = np.zeros((r[3], r[2], 3), dtype=np.float32)
+    cv2.fillConvexPoly(mask, np.int32(t1Rect), (1.0, 1.0, 1.0), 16, 0);
+
+    # Apply warpImage to small rectangular patches
+    img1Rect = img1[r1[1]:r1[1] + r1[3], r1[0]:r1[0] + r1[2]]
+    #img2Rect = img2[r2[1]:r2[1] + r2[3], r2[0]:r2[0] + r2[2]]
+
+    size = (r[2], r[3])
+    warpImage1 = applyAffineTransform(img1Rect, t1Rect, t2Rect, size)
+    #warpImage2 = applyAffineTransform(img2Rect, t2Rect, tRect, size)
+
+    imgRect = (0.5) * warpImage1 + 0.5 * warpImage1
+
+    result[r[1]:r[1] + r[3], r[0]:r[0] + r[2]] = result[r[1]:r[1] + r[3], r[0]:r[0] + r[2]] * ( 1 - mask ) + imgRect * mask
+
+
+#imgwarp = np.zeros(output.shape, dtype=output.dtype)
+imgwarp = output.copy()
+
+for i in range(1,len(jaw[0])):
+    t1 = triangle(jaw[0][i-1], jaw[0][i], mid)
+    t2 = movetriangle(t1)
+
+    warping(output, imgwarp, t1, t2)
+
+
+#cv2.imshow("draw", output)
+cv2.imshow("imgwarp", imgwarp)
+# 점 줄어드는거 어떻게구하지.. 밑에꺼 참고해서?
+'''
+def euclideanDist(p, q):
+    Point diff = p - q;
+    return cv2.sqrt(diff.x*diff.x + diff.y*diff.y);
+
+def GetControlPointWeight():
+    std::vector<double> IDW::GetControlPointWeight(cv::Point input)
+{
+    std::vector<double> weightMap;
+    double weightSum = 0;
+    for (int i = 0; i < startControlPoint_.size(); i++)
+    {
+        double temp = 1 / (Distance(endControlPoint_[i], input) + EPS);
+        temp = pow(temp, weight_);
+        weightSum = weightSum + temp;
+        weightMap.push_back(temp);
+    }
+    for (int i = 0; i < startControlPoint_.size(); i++)
+    {
+        weightMap[i] /= weightSum;
+    }
+    return weightMap;
+}
+'''
+
+# bounding box 구하고 해당 영역에 대해서 affinetransform
+
+# Copy triangular region of the rectangular patch to the output image
+
 
 # dlib.hit_enter_to_continue()
 cv2.waitKey(0)
