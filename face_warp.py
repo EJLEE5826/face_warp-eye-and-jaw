@@ -283,7 +283,7 @@ def main(img):
 
 
 if __name__ == "__main__":
-    select = int(input('Webcam(1) or Image(2): '))
+    select = int(input('Webcam(1) or Video(2) or Image(3): '))
 
     if select == 1:
         capture = cv2.VideoCapture(0)
@@ -300,7 +300,33 @@ if __name__ == "__main__":
         capture.release()
         cv2.destroyAllWindows()
 
-    elif select == 2:
+    if select == 2:
+
+        capture = cv2.VideoCapture('[mix]sample_720.mp4')
+
+        fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+        out = cv2.VideoWriter('output.avi', fourcc, 18.0, (960, 720))
+
+        while (capture.isOpened()):
+            ret, frame = capture.read()
+
+            if ret:
+                cv2.imshow("VideoFrame", frame)
+                warpframe = main(frame)
+                cv2.imshow("warpframe", warpframe)
+                out.write(warpframe)
+
+                if cv2.waitKey(1) > 0:
+                    break
+
+            else:
+                break
+
+        capture.release()
+        out.release()
+        cv2.destroyAllWindows()
+
+    elif select == 3:
         imgname = 'w_sq.jpg'
         img = cv2.imread('images/'+imgname)
         warpimg = main(img)
